@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Vanilla Craft - Final Release</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #000;
+            font-family: sans-serif;
+            user-select: none;
+            touch-action: none;
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 24px;
+            pointer-events: none;
+            z-index: 5;
+        }
+        #top-bar {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 10;
+        }
+
+        /* Инвентарь */
+        #inventory {
+            position: absolute;
+            bottom: 15px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 8px;
+            z-index: 10;
+            background: rgba(0,0,0,0.6);
+            padding: 8px;
+            border-radius: 8px;
+            border: 2px solid #555;
+            min-width: 60px;
+            min-height: 50px;
+        }
+
+        .slot {
+            width: 44px;
+            height: 44px;
+            background: #222;
+            border: 2px solid #666;
+            border-radius: 6px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            cursor: pointer;
+        }
+        .slot.active {
+            border-color: #fff;
+            box-shadow: 0 0 8px #fff;
+        }
+        .block-icon {
+            width: 22px;
+            height: 22px;
+            border-radius: 3px;
+            border: 1px solid rgba(0,0,0,0.4);
+        }
+        .count-badge {
+            position: absolute;
+            bottom: 2px;
+            right: 4px;
+            color: #fff;
+            font-size: 10px;
+            font-weight: bold;
+            text-shadow: 1px 1px 1px #000;
+        }
+
+        /* Кнопки движения */
+        #move-controls {
+            position: absolute;
+            bottom: 15px;
+            left: 15px;
+            display: grid;
+            grid-template-columns: repeat(3, 45px);
+            grid-template-rows: repeat(2, 45px);
+            gap: 5px;
+            z-index: 10;
+        }
+        #jump-control {
+            position: absolute;
+            bottom: 15px;
+            right: 15px;
+            z-index: 10;
+        }
+        button {
+            background: #3a3a3a;
+            color: #fff;
+            border: 2px solid #777;
+            padding: 6px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 12px;
+            touch-action: manipulation;
+            cursor: pointer;
+        }
+        #btn-jump {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            font-size: 14px;
+            background: rgba(58, 58, 58, 0.8);
+        }
+
+        /* Модальные окна */
+        .modal {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 12px;
+            z-index: 100;
+            color: white;
+        }
+        .menu-btn {
+            width: 240px;
+            height: 42px;
+            font-size: 15px;
+        }
+        .setting-row {
+            display: flex;
+            justify-content: space-between;
+            width: 260px;
+            align-items: center;
+            font-size: 14px;
+            background: rgba(255,255,255,0.1);
+            padding: 10px;
+            border-radius: 6px;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+    <div id="crosshair">+</div>
+    <div id="canvas-container"></div>
+
+    <div id="top-bar">
+        <button id="btn-open-menu">☰ Меню</button>
+    </div>
+
+    <div id="move-controls">
+        <div></div>
+        <button id="btn-fwd">▲</button>
+        <div></div>
+        <button id="btn-left">◄</button>
+        <button id="btn-back">▼</button>
+        <button id="btn-right">►</button>
+    </div>
+    
+    <div id="jump-control">
+        <button id="btn-jump">Прыжок</button>
+    </div>
+
+    <div id="inventory"></div>
+
+    <div id="modal-main" class="modal">
+        <h1>VANILLA CRAFT</h1>
+        <button class="menu-btn" style="background: #2e7d32;" id="btn-continue">Продолжить</button>
+        <button class="menu-btn" id="btn-settings">⚙ Настройки</button>
+        <button class="menu-btn" id="btn-flat">Создать Плоский мир</button>
+        <button class="menu-btn" id="btn-hills">Создать Мир с холмами</button>
+    </div>
+
+    <div id="modal-settings" class="modal">
+        <h2>НАСТРОЙКИ</h2>
+        <div class="setting-row">
+            <span>Чувствительность:</span>
+            <input type="range" id="sens-range" min="0.1" max="0.5" step="0.05" value="0.25">
+        </div>
+        <button class="menu-btn" style="margin-top: 15px;" id="btn-settings-back">Назад в меню</button>
+    </div>
+
+    <script>
+        const MAP_SIZE = 164;
+        let isMenuOpen = false;
+        let sensitivity = 0.25;
+        let selectedMaterial = null;
+
+        const clock = new THREE.Clock();
+        let velocityY = 0;
+        let canJump = false;
+        let timeOfDay = Math.PI / 2;
+
+        const inventory = {
+            grass: 64,
+            dirt: 64,
+            stone: 64,
+            wood: 64,
+            leaves: 64
+        };
+
+        const blockColors = {
+            grass: '#55a846',
+            dirt: '#866043',
+            stone: '#808080',
+            wood: '#674a33',
+            leaves: '#3c8f3c'
+        };
+
+        function updateInventoryUI() {
+            const invContainer = document.getElementById('inventory');
+            invContainer.innerHTML = '';
+
+            for (let type in inventory) {
+                if (inventory[type] > 0) {
+                    const slot = document.createElement('div');
+                    slot.className = `slot ${selectedMaterial === type ? 'active' : ''}`;
+                    slot.onclick = (e) => { e.stopPropagation(); selectBlock(type); };
+
+                    const icon = document.createElement('div');
+                    icon.className = 'block-icon';
+                    icon.style.backgroundColor = blockColors[type] || '#fff';
+
+                    const badge = document.createElement('div');
+                    badge.className = 'count-badge';
+                    badge.innerText = inventory[type];
+
+                    slot.appendChild(icon);
+                    slot.appendChild(badge);
+                    invContainer.appendChild(slot);
+                }
+            }
+
+            if (!selectedMaterial && Object.keys(inventory).length > 0) {
+                selectedMaterial = Object.keys(inventory)[0];
+            }
+        }
+
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        container.appendChild(renderer.domElement);
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+        
+        const dirLight = new THREE.DirectionalLight(0xffffe0, 0.8);
+        dirLight.position.set(MAP_SIZE / 2, 80, MAP_SIZE / 2);
+        scene.add(dirLight);
+
+        const materials = {
+            grass: new THREE.MeshLambertMaterial({ color: 0x55a846 }),
+            dirt: new THREE.MeshLambertMaterial({ color: 0x866043 }),
+            stone: new THREE.MeshLambertMaterial({ color: 0x808080 }),
+            wood: new THREE.MeshLambertMaterial({ color: 0x674a33 }),
+            leaves: new THREE.MeshLambertMaterial({ color: 0x3c8f3c })
+        };
+
+        const blockGeo = new THREE.BoxGeometry(1, 1, 1);
+        let blocks = [];
+        let worldHeightMap = {};
+
+        function createBlock(x, y, z, type) {
+            const mesh = new THREE.Mesh(blockGeo, materials[type]);
+            mesh.position.set(x, y, z);
+            mesh.userData = { type: type };
+            scene.add(mesh);
+            blocks.push(mesh);
+
+            const key = `${Math.round(x)},${Math.round(z)}`;
+            if (!worldHeightMap[key] || y > worldHeightMap[key]) {
+                worldHeightMap[key] = y;
+            }
+            return mesh;
+        }
+
+        let lon = 0, lat = 0;
+        let isPointerDown = false;
+        let pointerStartX = 0, pointerStartY = 0;
+        let totalDragDistance = 0;
+        let touchTimer = null;
+        let isLongPress = false;
+
+        window.addEventListener('pointerdown', (e) => {
+            if (isMenuOpen || e.target.closest('.modal') || e.target.closest('button') || e.target.closest('#inventory')) return;
+            isPointerDown = true;
+            pointerStartX = e.clientX;
+            pointerStartY = e.clientY;
+            totalDragDistance = 0;
+            isLongPress = false;
+
+            touchTimer = setTimeout(() => {
+                if (totalDragDistance < 10) {
+                    isLongPress = true;
+                    destroyBlock();
+                }
+            }, 400);
+        });
+
+        window.addEventListener('pointermove', (e) => {
+            if (!isPointerDown || isMenuOpen) return;
+            const deltaX = e.clientX - pointerStartX;
+            const deltaY = e.clientY - pointerStartY;
+            totalDragDistance += Math.hypot(deltaX, deltaY);
+
+            if (totalDragDistance > 10) clearTimeout(touchTimer);
+
+            lon -= deltaX * sensitivity;
+            lat -= deltaY * sensitivity;
+            lat = Math.max(-85, Math.min(85, lat));
+
+            pointerStartX = e.clientX;
+            pointerStartY = e.clientY;
+            updateCameraRotation();
+        });
+
+        window.addEventListener('pointerup', (e) => {
+            if (isMenuOpen) return;
+            if (isPointerDown) {
+                clearTimeout(touchTimer);
+                if (!isLongPress && totalDragDistance < 10) buildBlock();
+            }
+            isPointerDown = false;
+        });
+
+        function updateCameraRotation() {
+            const phi = THREE.MathUtils.degToRad(90 - lat);
+            const theta = THREE.MathUtils.degToRad(lon);
+            const target = new THREE.Vector3();
+            target.x = camera.position.x + Math.sin(phi) * Math.cos(theta);
+            target.y = camera.position.y + Math.cos(phi);
+            target.z = camera.position.z + Math.sin(phi) * Math.sin(theta);
+            camera.lookAt(target);
+        }
+
+        const modalMain = document.getElementById('modal-main');
+        const modalSettings = document.getElementById('modal-settings');
+
+        function showMainMenu() { isMenuOpen = true; modalMain.style.display = 'flex'; modalSettings.style.display = 'none'; }
+        function showSettings() { isMenuOpen = true; modalMain.style.display = 'none'; modalSettings.style.display = 'flex'; }
+        function closeAllMenus() { isMenuOpen = false; modalMain.style.display = 'none'; modalSettings.style.display = 'none'; clock.getDelta(); }
+
+        document.getElementById('btn-open-menu').onclick = (e) => { e.stopPropagation(); showMainMenu(); };
+        document.getElementById('btn-continue').onclick = (e) => { e.stopPropagation(); closeAllMenus(); };
+        document.getElementById('btn-settings').onclick = (e) => { e.stopPropagation(); showSettings(); };
+        document.getElementById('btn-settings-back').onclick = (e) => { e.stopPropagation(); showMainMenu(); };
+        document.getElementById('sens-range').oninput = (e) => { sensitivity = parseFloat(e.target.value); };
+
+        document.getElementById('btn-flat').onclick = (e) => { e.stopPropagation(); resetAndCreateWorld('flat'); };
+        document.getElementById('btn-hills').onclick = (e) => { e.stopPropagation(); resetAndCreateWorld('hills'); };
+
+        function generateWorld(type = 'hills') {
+            blocks.forEach(b => scene.remove(b));
+            blocks = [];
+            worldHeightMap = {};
+
+            for (let x = 0; x < MAP_SIZE; x++) {
+                for (let z = 0; z < MAP_SIZE; z++) {
+                    let height = 2;
+                    if (type === 'hills') {
+                        height = Math.floor(Math.sin(x * 0.08) * 3 + Math.cos(z * 0.08) * 3) + 4;
+                    }
+                    createBlock(x, 0, z, 'stone');
+                    for (let h = 1; h < height; h++) createBlock(x, h, z, 'dirt');
+                    createBlock(x, height, z, 'grass');
+                }
+            }
+            const spawnX = Math.floor(MAP_SIZE / 2);
+            const spawnZ = Math.floor(MAP_SIZE / 2);
+            camera.position.set(spawnX, (worldHeightMap[`${spawnX},${spawnZ}`] || 4) + 2, spawnZ);
+        }
+
+        function resetAndCreateWorld(type) {
+            inventory.grass = 64;
+            inventory.dirt = 64;
+            inventory.stone = 64;
+            inventory.wood = 64;
+            inventory.leaves = 64;
+            generateWorld(type);
+            updateInventoryUI();
+            closeAllMenus();
+        }
+
+        const raycaster = new THREE.Raycaster();
+        const centerVector = new THREE.Vector2(0, 0);
+
+        function getTargetBlock() {
+            raycaster.setFromCamera(centerVector, camera);
+            const intersects = raycaster.intersectObjects(blocks);
+            return intersects.length > 0 ? intersects[0] : null;
+        }
+
+        function buildBlock() {
+            if (isMenuOpen || !selectedMaterial || !inventory[selectedMaterial] || inventory[selectedMaterial] <= 0) return;
+            const hit = getTargetBlock();
+            if (hit) {
+                const pos = hit.point.clone().add(hit.face.normal.clone().multiplyScalar(0.5));
+                const bx = Math.round(pos.x);
+                const by = Math.round(pos.y);
+                const bz = Math.round(pos.z);
+                
+                if (Math.abs(camera.position.x - bx) < 0.8 && Math.abs(camera.position.z - bz) < 0.8 && camera.position.y - by > -1.5 && camera.position.y - by < 0.5) return;
+
+                createBlock(bx, by, bz, selectedMaterial);
+                inventory[selectedMaterial]--;
+                updateInventoryUI();
+            }
+        }
+
+        function destroyBlock() {
+            if (isMenuOpen) return;
+            const hit = getTargetBlock();
+            if (hit && hit.object) {
+                const type = hit.object.userData.type;
+                if (type) {
+                    inventory[type] = (inventory[type] || 0) + 1;
+                    if (!selectedMaterial) selectedMaterial = type;
+                    updateInventoryUI();
+                }
+                scene.remove(hit.object);
+                const idx = blocks.indexOf(hit.object);
+                if (idx > -1) blocks.splice(idx, 1);
+                
+                const bx = Math.round(hit.object.position.x);
+                const bz = Math.round(hit.object.position.z);
+                if (worldHeightMap[`${bx},${bz}`]) {
+                    worldHeightMap[`${bx},${bz}`] = worldHeightMap[`${bx},${bz}`] - 1;
+                }
+            }
+        }
+
+        const moveState = { fwd: false, back: false, left: false, right: false, jump: false };
+
+        function bindMove(id, key) {
+            const btn = document.getElementById(id);
+            const start = (e) => { e.preventDefault(); e.stopPropagation(); moveState[key] = true; };
+            const end = (e) => { e.preventDefault(); e.stopPropagation(); moveState[key] = false; };
+            btn.addEventListener('touchstart', start, {passive: false});
+            btn.addEventListener('touchend', end);
+            btn.addEventListener('mousedown', start);
+            btn.addEventListener('mouseup', end);
+            btn.addEventListener('mouseleave', end);
+        }
+
+        bindMove('btn-fwd', 'fwd'); bindMove('btn-back', 'back');
+        bindMove('btn-left', 'left'); bindMove('btn-right', 'right');
+        bindMove('btn-jump', 'jump');
+
+        const downRaycaster = new THREE.Raycaster();
+
+        function updatePhysicsAndMovement(delta) {
+            if (isMenuOpen) return;
+
+            const speed = 4.5 * delta;
+            const dir = new THREE.Vector3();
+            camera.getWorldDirection(dir);
+            dir.y = 0; dir.normalize();
+            const sideDir = new THREE.Vector3(-dir.z, 0, dir.x);
+
+            if (moveState.fwd) camera.position.addScaledVector(dir, speed);
+            if (moveState.back) camera.position.addScaledVector(dir, -speed);
+            if (moveState.left) camera.position.addScaledVector(sideDir, -speed);
+            if (moveState.right) camera.position.addScaledVector(sideDir, speed);
+
+            camera.position.x = Math.max(1, Math.min(MAP_SIZE - 2, camera.position.x));
+            camera.position.z = Math.max(1, Math.min(MAP_SIZE - 2, camera.position.z));
+
+            velocityY -= 20 * delta;
+            
+            downRaycaster.set(camera.position, new THREE.Vector3(0, -1, 0));
+            const intersects = downRaycaster.intersectObjects(blocks);
+
+            if (intersects.length > 0 && intersects[0].distance <= 1.5) {
+                if (velocityY < 0) {
+                    velocityY = 0;
+                    canJump = true;
+                    camera.position.y = intersects[0].point.y + 1.5;
+                }
+            } else {
+                canJump = false;
+            }
+
+            if (moveState.jump && canJump) {
+                velocityY = 7.5;
+                canJump = false;
+            }
+
+            camera.position.y += velocityY * delta;
+
+            if (camera.position.y < -5) {
+                camera.position.y = 10;
+                velocityY = 0;
+            }
+        }
+
+        function updateEnvironment(delta) {
+            if (isMenuOpen) return;
+            
+            timeOfDay += delta * 0.05;
+            if (timeOfDay > Math.PI * 2) timeOfDay = 0;
+
+            const sunHeight = Math.sin(timeOfDay);
+            
+            dirLight.position.x = MAP_SIZE / 2 + Math.cos(timeOfDay) * (MAP_SIZE / 1.5);
+            dirLight.position.y = sunHeight * (MAP_SIZE / 1.5);
+
+            if (sunHeight > 0.2) {
+                scene.background = new THREE.Color(0x7ec0ee);
+                dirLight.intensity = 0.8;
+                ambientLight.intensity = 0.5;
+            } else if (sunHeight > -0.2) {
+                const lerpFactor = (sunHeight + 0.2) / 0.4;
+                const sunsetColor = new THREE.Color(0xfd5e53);
+                const dayColor = new THREE.Color(0x7ec0ee);
+                const nightColor = new THREE.Color(0x050510);
+                
+                if (sunHeight > 0) {
+                    scene.background = sunsetColor.lerp(dayColor, lerpFactor);
+                } else {
+                    scene.background = nightColor.lerp(sunsetColor, lerpFactor);
+                }
+                dirLight.intensity = Math.max(0, lerpFactor * 0.8);
+                ambientLight.intensity = 0.2 + lerpFactor * 0.3;
+            } else {
+                scene.background = new THREE.Color(0x050510);
+                dirLight.intensity = 0;
+                ambientLight.intensity
