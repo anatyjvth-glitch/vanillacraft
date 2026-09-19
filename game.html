@@ -512,6 +512,7 @@
 
             camera.position.y += velocityY * delta;
 
+        
             if (camera.position.y < -5) {
                 camera.position.y = 10;
                 velocityY = 0;
@@ -548,5 +549,5 @@
                 ambientLight.intensity = 0.2 + lerpFactor * 0.3;
             } else {
                 scene.background = new THREE.Color(0x050510);
-                dirLight.intensity = 0;
+                dirLight.intensity = 0
                 ambientLight.intensity
